@@ -53,8 +53,11 @@ namespace ValuableCoins
                             _view.AllCoinsDgv.DataSource = AllCoinsList;
                             SetAllCoinsColorGreen();
 
-                            _view.LblAllCoinsPriceValue.Text = CalcSumOfPrices(AllCoinsList).ToString();
-                            _view.LblAllCoinsCountValue.Text = AllCoinsList.Count.ToString();
+                            if (AllCoinsList != null)
+                            {
+                                _view.LblAllCoinsPriceValue.Text = CalcSumOfPrices(AllCoinsList).ToString();
+                                _view.LblAllCoinsCountValue.Text = AllCoinsList.Count.ToString();
+                            }
                         }
                     ));
                     break;
@@ -66,12 +69,15 @@ namespace ValuableCoins
                             _view.CollectionDgv.DataSource = CollectionList;
                             SetAllCoinsColorGreen();
 
-                            _view.LblCollectionPriceValue.Text = CalcSumOfPrices(CollectionList).ToString();
-                            _view.LblCollectionCountValue.Text = CollectionList.Count.ToString();
 
-                            FileManager fileManager = new FileManager(_collectionFileName);
+                            if (CollectionList != null)
+                            {
+                                FileManager fileManager = new FileManager(_collectionFileName);
+                                fileManager.Save(CollectionList);
 
-                            fileManager.Save(CollectionList);
+                                _view.LblCollectionPriceValue.Text = CalcSumOfPrices(CollectionList).ToString();
+                                _view.LblCollectionCountValue.Text = CollectionList.Count.ToString();
+                            }
                         }
                     ));
                     break;
@@ -315,9 +321,13 @@ namespace ValuableCoins
         private int CalcSumOfPrices(List<Coin> list)
         {
             int sum = 0;
-            foreach(var l in list)
+
+            if (list != null)
             {
-                sum += l.Price;
+                foreach (var l in list)
+                {
+                    sum += l.Price;
+                }
             }
             return sum;
         }
