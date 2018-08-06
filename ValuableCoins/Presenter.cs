@@ -4,7 +4,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
-using System.Threading;
 using System.Windows.Forms;
 using System.Linq.Dynamic;
 using System.ComponentModel;
@@ -13,11 +12,10 @@ namespace ValuableCoins
 {
     class Presenter
     {
-        private const string _rootUrl  = "https://bank.gov.ua";
-        private const string _tableUrl = _rootUrl + "/control/uk/currentmoney/cmcoin/list";
-
-        private const string _collectionFileName = "collection.txt";
         private readonly IMainForm _view;
+
+        private const string _tableUrl = "https://bank.gov.ua/control/uk/currentmoney/cmcoin/list";
+        private const string _collectionFileName = "collection.txt";
 
         private List<Coin> _allCoinsList = new List<Coin>();
         public  List<Coin> AllCoinsList 
@@ -41,6 +39,31 @@ namespace ValuableCoins
 
         private ListSortDirection _listSortDirection = ListSortDirection.Ascending;
 
+
+        public Presenter(IMainForm view)
+        {
+            _view = view;
+
+            // To make dgv not lag when they are scrolling
+            _view.AllCoinsDgv.DoubleBuffered(true);
+            _view.CollectionDgv.DoubleBuffered(true);
+
+            _view.UpdateInfo                += _view_UpdateInfo;
+            _view.AddCoinsToCollection      += _view_AddCoinsToCollection;
+            _view.RemoveCoinsFromCollection += _view_RemoveCoinsFromCollection;
+            _view.OpenAllCoinsMenu          += _view_OpenAllCoinsMenu;
+            _view.OpenCollectionMenu        += _view_OpenCollectionMenu;
+
+            _view.ColumnHeaderMouseClick += _view_ColumnHeaderMouseClick;
+
+            _view.MainFormActivated += _view_MainFormActivated;
+            _view.MainFormClosing   += _view_MainFormClosing;
+
+            _view.AllCoinsDgv.DataSource   = AllCoinsList;
+            _view.CollectionDgv.DataSource = CollectionList;
+        } 
+
+        // <---------- Event Methods ---------->
         private void OnPropertyChanged(string propertyName)
         {
             switch (propertyName)
@@ -85,32 +108,6 @@ namespace ValuableCoins
             }
             
         }
-
-        public Presenter(IMainForm view)
-        {
-            _view = view;
-
-            // To make dgv not lag when they are scrolling
-            _view.AllCoinsDgv.DoubleBuffered(true);
-            _view.CollectionDgv.DoubleBuffered(true);
-
-            _view.UpdateInfo                += _view_UpdateInfo;
-            _view.AddCoinsToCollection      += _view_AddCoinsToCollection;
-            _view.RemoveCoinsFromCollection += _view_RemoveCoinsFromCollection;
-            _view.OpenAllCoinsMenu          += _view_OpenAllCoinsMenu;
-            _view.OpenCollectionMenu        += _view_OpenCollectionMenu;
-
-            _view.ColumnHeaderMouseClick += _view_ColumnHeaderMouseClick;
-
-            _view.MainFormActivated += _view_MainFormActivated;
-            _view.MainFormClosing   += _view_MainFormClosing;
-
-            _view.AllCoinsDgv.DataSource   = AllCoinsList;
-            _view.CollectionDgv.DataSource = CollectionList;
-        }
-
-        
-
         private void _view_MainFormClosing(object sender, EventArgs e)
         {
             FileManager fileManager = new FileManager(_collectionFileName);
@@ -268,7 +265,6 @@ namespace ValuableCoins
             SetAllCoinsColorGreen();
         }
 
-        // <---------- Event Methods ---------->
         private void _view_UpdateInfo(object sender, EventArgs e)
         {
             UpdateInfo();
@@ -282,7 +278,6 @@ namespace ValuableCoins
             _view.ProgressBar1.Style = ProgressBarStyle.Marquee;
             
             AllCoinsList = await GetCoinList();
-            //var coinFullDescriptionList  = await GetCoinFullDescriptionList(coinList);
             // Print info in dataGridView
 
             _view.ProgressBar1.Style = ProgressBarStyle.Blocks;
@@ -357,83 +352,12 @@ namespace ValuableCoins
                 int k = 0;
                 foreach (var row in infoListMatrix)
                 {
-                    Coin coin = new Coin(k, row[0], row[1], row[2], ParseInt(row[3]), ParseDate(row[4]));
+                    Coin coin = new Coin(k, row[0], row[1], row[2], TypeParser.ParseInt(row[3]), TypeParser.ParseDate(row[4]));
                     coinList.Add(coin);
                     k++;
                 }
                 return coinList;
             }
-        }
-        private async Task<List<CoinFullDescription>> GetCoinFullDescriptionList(List<Coin> coinList)
-        {
-            List<string> urlFromRootList = new List<string>();
-            // Get all urls
-            using (var client = new HttpClient())
-            {
-                var html = await client.GetStringAsync(_tableUrl);
-                var doc = new HtmlAgilityPack.HtmlDocument();
-                doc.LoadHtml(html);
-
-                var table = doc.DocumentNode.SelectSingleNode("//table[@id='coins_table']");
-                var urls =  table.Descendants("tr")
-                            .Skip(1)
-                            .Select(tr => tr.SelectSingleNode("td")
-                                            .SelectSingleNode("a"))
-                            .Select(a  => WebUtility.HtmlDecode(a.GetAttributeValue("href","")))
-                            .ToList();
-
-                // Given urls are like /control/uk/currentmoney... so that we should add root to the beginning
-                foreach (var url in urls)
-                {
-                    urlFromRootList.Add(_rootUrl + url);
-                }
-                return await GetInfoFromUrlList(urlFromRootList, coinList);
-            }
-        }
-        private async Task<List<CoinFullDescription>> GetInfoFromUrlList(List<string> urlList, List<Coin> coinList)
-        {
-            List<CoinFullDescription> coinFullDescriptions = new List<CoinFullDescription>();
-
-            int index = 0;
-            foreach (var url in urlList)
-            {
-                using (var client = new HttpClient())
-                {
-                    var html = await client.GetStringAsync(url);
-                    var doc = new HtmlAgilityPack.HtmlDocument();
-                    doc.LoadHtml(html);
-
-                    var contentDiv = doc.DocumentNode.SelectSingleNode("//div[@class='content']");
-
-                    var infoStr = contentDiv.Descendants("table").ToList()[3].SelectNodes("tr").Select(td => WebUtility.HtmlDecode(td.InnerText)).ToList()[1];
-                    var infoArr = infoStr.Split(new char[] { '\n'}, StringSplitOptions.RemoveEmptyEntries);
-                    
-                    var list2 = contentDiv.Descendants("table").ToList()[4].SelectNodes("tr").Select(td => WebUtility.HtmlDecode(td.InnerText)).ToList();
-
-                    List<string> infoList = new List<string>();
-                    foreach (var a in list2)  { infoList.Add(a); }
-                    foreach (var a in infoArr){ infoList.Add(a); }
-                    infoList = RemoveSpaces(infoList, true);
-                    CoinFullDescription coinFullDescription = null;
-                    try
-                    {
-                        coinFullDescription = new CoinFullDescription(coinList[index],
-                                                                                          ParseFloat(infoList[9]),
-                                                                                          ParseFloat(infoList[11]),
-                                                                                          infoList[12],
-                                                                                          infoList[0],
-                                                                                          ParseInt(infoList[13]),
-                                                                                          infoList[1],
-                                                                                     infoList[3]);
-                    }catch(Exception ex)
-                    {
-                        Console.WriteLine(index);
-                    }
-                    coinFullDescriptions.Add(coinFullDescription);
-                }
-                index++;
-            }
-            return coinFullDescriptions;
         }
 
         private List<string> RemoveSpaces(List<string> arr, bool doRemoveEmptyRows)
@@ -492,62 +416,6 @@ namespace ValuableCoins
                 result.Add(RemoveSpaces(matrix[i], doRemoveEmptyRows));
             }
             return result;
-        }
-
-        // Parse values
-        private int ParseInt(string str)
-        {
-            int number = 0;
-            int.TryParse(str, out number);
-            return number;
-        }
-        private float ParseFloat(string str)
-        {
-            float number = 0f;
-            float.TryParse(str, out number);
-            return number;
-        }
-        private DateTime ParseDate(string str)
-        {
-            // Parse str to change ukrainian words to english
-            string oldMonth = "";
-            for(int i = 0; i < str.Length; i++)
-            {
-                if (char.IsLetter(str[i]))
-                {
-                    // Checks if char equals i (english) and store in oldMonth i (ukrainian)
-                    if (str[i].Equals('i'))
-                    {
-                        str = str.Replace(str[i], 'і');
-                    }
-                    oldMonth += str[i];
-                }
-            }
-            oldMonth = oldMonth.ToLower();
-
-            string newMonth = "";
-            switch (oldMonth)
-            {
-                case "січня": newMonth = "january"; break;
-                case "лютого": newMonth = "february"; break;
-                case "березня": newMonth = "march"; break;
-                case "квітня": newMonth = "april"; break;
-                case "травня": newMonth = "may"; break;
-                case "червня": newMonth = "june"; break;
-                case "липня": newMonth = "july"; break;
-                case "серпня": newMonth = "august"; break;
-                case "вересня": newMonth = "september"; break;
-                case "жовтня": newMonth = "october"; break;
-                case "листопада": newMonth = "november"; break;
-                case "грудня": newMonth = "december"; break;
-                default:break;
-            }
-            str =  str.Replace(oldMonth, newMonth);
-            DateTime dateTime = new DateTime();
-
-            DateTime.TryParse(str, out dateTime);
-
-            return dateTime;
         }
         #endregion
     }
